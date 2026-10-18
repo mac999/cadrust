@@ -137,6 +137,8 @@ kbd{font:10px ui-monospace,Menlo,monospace;color:var(--muted)}
 .tree li:hover{background:var(--panel2)}
 .tree li.sel{background:rgba(6,150,215,.22)}
 .tree li.faded{opacity:.5}
+.tree li.plane,.tree li.view{cursor:pointer}
+.tree li.plane.sel .nm{color:var(--accent2)}
 .tree li .tw{width:12px;text-align:center;font-size:9px;color:var(--muted);cursor:pointer}
 .tree li .eye{display:flex;color:var(--muted);cursor:pointer}
 .tree li .eye svg.i{width:14px;height:14px}
@@ -842,6 +844,8 @@ Object.assign(STRINGS.en, {
   'extent.distance':'Distance','extent.all':'Through all','btn.pickFaces':'Pick faces','pick.faceCount':'{n} faces picked. Click faces in the viewport to add.','pick.faceNone':'No faces picked. Click faces in the viewport.',
   'display.persp':'Perspective','display.ortho':'Orthographic','msg.imported':'Imported {n} solid(s) from {f}','msg.importFail':'Import failed: {e}','sh.presspull':'Press Pull (face: offset, edge: fillet, else extrude)',
   'btn.json':'cadrust JSON','btn.rebuild':'Compute All','file.new':'New Design','file.open':'Open…','file.export':'Export','file.download':'Download JSON',
+  'br.lookAt':'Look At','br.newSketch':'Create Sketch on this plane','br.find':'Find in timeline','br.fitBody':'Zoom to body','ctx.editSketch':'Edit Sketch',
+  'view.home':'Home','view.top':'Top','view.bottom':'Bottom','view.front':'Front','view.back':'Back','view.right':'Right','view.left':'Left',
   'file.saveas':'Save As…','file.exportdlg':'Export…','sv.save':'Save','sv.saveas':'Save As','sv.export':'Export','sv.name':'Name','sv.format':'Format','sv.location':'Location','sv.server':'Project folder (server)','sv.computer':'This computer','sv.browser':'Browser storage',
   'sv.newFolder':'New folder','sv.folderName':'Folder name','sv.root':'project','sv.up':'.. (up)','sv.pick':'Choose location…','sv.download':'Download','sv.pickHint':'Opens the system save dialog (Chromium browsers); Download uses the browser download folder.',
   'sv.savedTo':'Saved to {p}','sv.exportedTo':'Exported to {p}','sv.needName':'Enter a name','sv.overwrite':'{p} exists and will be overwritten','dp.folders':'Folders','dp.empty':'Empty folder',
@@ -875,6 +879,8 @@ Object.assign(STRINGS.ko, {
   'extent.distance':'거리','extent.all':'전체 관통','btn.pickFaces':'면 선택','pick.faceCount':'{n}개 면 선택. 뷰포트에서 면을 클릭해 추가합니다.','pick.faceNone':'선택한 면이 없습니다. 뷰포트에서 면을 클릭하세요.',
   'display.persp':'원근','display.ortho':'직교','msg.imported':'{f}에서 솔리드 {n}개를 가져왔습니다','msg.importFail':'가져오기 실패: {e}','sh.presspull':'누르기/당기기 (면: 간격띄우기, 모서리: 모깎기, 없으면 돌출)',
   'btn.json':'cadrust JSON','btn.rebuild':'모두 계산','file.new':'새 디자인','file.open':'열기…','file.export':'내보내기','file.download':'JSON 다운로드',
+  'br.lookAt':'보기 방향 맞춤','br.newSketch':'이 평면에 스케치 작성','br.find':'타임라인에서 찾기','br.fitBody':'바디로 확대','ctx.editSketch':'스케치 편집',
+  'view.home':'홈','view.top':'위','view.bottom':'아래','view.front':'앞','view.back':'뒤','view.right':'오른쪽','view.left':'왼쪽',
   'file.saveas':'다른 이름으로 저장…','file.exportdlg':'내보내기…','sv.save':'저장','sv.saveas':'다른 이름으로 저장','sv.export':'내보내기','sv.name':'이름','sv.format':'형식','sv.location':'위치','sv.server':'프로젝트 폴더(서버)','sv.computer':'이 컴퓨터','sv.browser':'브라우저 저장소',
   'sv.newFolder':'새 폴더','sv.folderName':'폴더 이름','sv.root':'프로젝트','sv.up':'.. (위로)','sv.pick':'위치 선택…','sv.download':'다운로드','sv.pickHint':'시스템 저장 대화상자를 엽니다(Chromium 계열). 다운로드는 브라우저 다운로드 폴더에 저장합니다.',
   'sv.savedTo':'{p}에 저장했습니다','sv.exportedTo':'{p}로 내보냈습니다','sv.needName':'이름을 입력하세요','sv.overwrite':'{p}이(가) 있어 덮어씁니다','dp.folders':'폴더','dp.empty':'빈 폴더',
@@ -1004,6 +1010,13 @@ function fit(dir = new THREE.Vector3(1, -1, 0.8), anim = true) {
   else { camera.near = d / 100; camera.far = d * 100; }
   camera.updateProjectionMatrix();
   if (anim && !sketch.active) tweenCamera(pos, c); else { camTween = null; camera.position.copy(pos); controls.target.copy(c); }
+}
+/** Frame a world box from a direction (animated); used for Zoom to body. */
+function fitBox(box, dir = camera.position.clone().sub(controls.target).normalize()) {
+  const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2 || 10;
+  const d = r / Math.sin(THREE.MathUtils.degToRad(persp.fov / 2)) * 1.1;
+  if (camera.isOrthographicCamera) { camera.zoom = (camera.top - camera.bottom) / (2.2 * r); camera.updateProjectionMatrix(); }
+  tweenCamera(c.clone().addScaledVector(dir.clone().normalize(), d), c);
 }
 /** Look from a direction while keeping the orbit target and distance (ViewCube faces). */
 function viewFrom(dir) {
@@ -1201,10 +1214,12 @@ const hiddenSketches = new Set();
 function showSketchLoops(sketches) {
   sketchGroup.clear();
   const okMat = new THREE.LineBasicMaterial({ color: cssVar('--accent2') || '#60a5fa' });
+  const selMat = new THREE.LineBasicMaterial({ color: cssVar('--pick') || '#f59e0b' });
   const badMat = new THREE.LineBasicMaterial({ color: cssVar('--err') || '#f87171' });
   for (const s of sketches || []) {
     if (hiddenSketches.has(s.id)) continue;
-    for (const loop of s.loops || []) sketchGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(loop.map(p => new THREE.Vector3(...p))), okMat));
+    const mat = s.id === selectedSketch ? selMat : okMat;
+    for (const loop of s.loops || []) sketchGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(loop.map(p => new THREE.Vector3(...p))), mat));
     for (const ch of s.open || []) sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ch.map(p => new THREE.Vector3(...p))), badMat));
   }
 }
@@ -1502,7 +1517,52 @@ $('newPOk').onclick = () => {
   $('newPName').value = ''; $('newPVal').value = ''; $('paramAdd').style.display = 'none';
 };
 $('newPVal').addEventListener('keydown', e => { if (e.key === 'Enter') $('newPOk').click(); });
-const treeOpen = { bodies: true, sketches: true, origin: false };
+const treeOpen = { bodies: true, sketches: true, origin: false, views: false };
+let selectedPlane = null, selectedSketch = null;
+// Translucent origin planes shown when a plane is hovered or selected in the Browser (as Fusion does).
+const planeGroup = new THREE.Group(); scene.add(planeGroup);
+const planeMeshes = {};
+for (const pl of ['XY', 'XZ', 'YZ']) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x0696d7, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }));
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x0696d7 }));
+  m.add(edge); m.visible = false; planeGroup.add(m); planeMeshes[pl] = m;
+}
+function showPlanes() {
+  const size = Math.max(60, modelSize * 1.2);
+  for (const pl of ['XY', 'XZ', 'YZ']) {
+    const m = planeMeshes[pl], [u, v, n] = PLANES[pl].map(V);
+    m.scale.set(size, size, 1); m.position.set(0, 0, 0);
+    m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, n));
+    m.visible = pl === selectedPlane || pl === hoveredPlane;
+    m.material.opacity = pl === selectedPlane ? 0.26 : 0.14;
+  }
+}
+let hoveredPlane = null;
+/** A new empty sketch on a base plane, straight from the Browser. */
+function newSketchOn(plane) {
+  if (sketch.active) exitSketch(true);
+  const feat = { type: 'Sketch', id: newId('Sketch'), plane, offset: 0, entities: [], constraints: [] };
+  let idx = -1;
+  commit(d => { idx = insertFeature(d, feat); }, { rebuildAfter: false });
+  enterSketch(idx, true);
+}
+/** Camera along a base plane's normal (Look At). */
+function lookAtPlane(plane) { const n = V(PLANES[plane][2]); fit(n, true); }
+/** Camera along a sketch's plane normal. */
+function lookAtSketch(id) { const s = lastStatus.sketches.find(x => x.id === id); if (s) fit(V(s.normal), true); }
+function fitBody(id) {
+  const b = lastStatus.bodies.find(x => x.id === id); if (!b) return;
+  fitBox(new THREE.Box3(new THREE.Vector3(...b.bbox_min), new THREE.Vector3(...b.bbox_max)));
+}
+/** Highlight the timeline features that create or touch an object (Find in timeline). */
+function findInTimeline(id) {
+  document.querySelectorAll('#timeline .feat').forEach(d => {
+    const f = doc.timeline.find(x => x.id === d.dataset.id);
+    const hit = f && (f.id === id || f.body === id || f.target === id || f.sketch === id || f.tool === id || (f.sketches || []).includes(id) || f.path === id);
+    d.classList.toggle('self', !!hit);
+  });
+  setTimeout(() => document.querySelectorAll('#timeline .feat.self').forEach(d => d.classList.remove('self')), 2500);
+}
 const hiddenBodies = new Set();
 const icon = (id, cls = '') => `<svg class="i ${cls}"><use href="#${id}"/></svg>`;
 /** Fusion-style browser: document root, settings, named views, origin, bodies and sketches with eye toggles. */
@@ -1511,13 +1571,28 @@ function renderTree() {
   const row = (depth, html, cls = '') => { const li = document.createElement('li'); li.className = `d${depth} ${cls}`; li.innerHTML = html; tree.appendChild(li); return li; };
   const eye = (on, title) => `<span class="eye${on ? '' : ' off'}" title="${title}">${icon(on ? 'i-eye' : 'i-eyeoff')}</span>`;
   const tw = (open) => `<span class="tw">${open ? '▾' : '▸'}</span>`;
-  row(0, `${tw(true)}${eye(true, '')}<span class="ti">${icon('i-component')}</span><span class="nm">${doc.name || 'Untitled'}</span>`);
+  const rootRow = row(0, `${tw(true)}${eye(true, '')}<span class="ti">${icon('i-component')}</span><span class="nm">${doc.name || 'Untitled'}</span>`);
+  rootRow.ondblclick = () => fit();
   row(1, `<span class="tw"></span><span class="eye" style="visibility:hidden">${icon('i-eye')}</span><span class="ti">${icon('i-settings')}</span><span class="nm">${t('br.settings')}</span><span class="cnt">${t('br.units', { u: doc.units })}</span>`);
-  row(1, `<span class="tw"></span><span class="eye" style="visibility:hidden">${icon('i-eye')}</span><span class="ti">${icon('i-views')}</span><span class="nm">${t('br.views')}</span>`);
+  const vr = row(1, `${tw(treeOpen.views)}<span class="eye" style="visibility:hidden">${icon('i-eye')}</span><span class="ti">${icon('i-views')}</span><span class="nm">${t('br.views')}</span>`);
+  vr.querySelector('.tw').onclick = () => { treeOpen.views = !treeOpen.views; renderTree(); };
+  vr.ondblclick = () => { treeOpen.views = !treeOpen.views; renderTree(); };
+  const VIEWS = { home: null, top: [0, 0, 1], bottom: [0, 0, -1], front: [0, -1, 0], back: [0, 1, 0], right: [1, 0, 0], left: [-1, 0, 0] };
+  if (treeOpen.views) for (const [k, dir] of Object.entries(VIEWS)) {
+    const li = row(2, `<span class="tw"></span><span class="eye" style="visibility:hidden">${icon('i-eye')}</span><span class="ti">${icon('i-views')}</span><span class="nm">${t('view.' + k)}</span>`, 'view');
+    li.onclick = () => { if (sketch.active) return; dir ? fit(V(dir), true) : fit(); };
+  }
   const org = row(1, `${tw(treeOpen.origin)}${eye(axesOn, t('nav.axes'))}<span class="ti">${icon('i-origin')}</span><span class="nm">${t('br.origin')}</span>`);
   org.querySelector('.tw').onclick = () => { treeOpen.origin = !treeOpen.origin; renderTree(); };
   org.querySelector('.eye').onclick = () => { toggleAxes(); renderTree(); };
-  if (treeOpen.origin) for (const pl of ['XY', 'XZ', 'YZ']) row(2, `<span class="tw"></span><span class="eye" style="visibility:hidden">${icon('i-eye')}</span><span class="ti">${icon('i-plane')}</span><span class="nm">${pl}</span>`);
+  if (treeOpen.origin) for (const pl of ['XY', 'XZ', 'YZ']) {
+    const li = row(2, `<span class="tw"></span><span class="eye" style="visibility:hidden">${icon('i-eye')}</span><span class="ti">${icon('i-plane')}</span><span class="nm">${pl}</span>`, 'plane' + (selectedPlane === pl ? ' sel' : ''));
+    li.onclick = () => { selectedPlane = selectedPlane === pl ? null : pl; showPlanes(); renderTree(); };
+    li.ondblclick = () => { selectedPlane = pl; showPlanes(); newSketchOn(pl); };
+    li.onmouseenter = () => { hoveredPlane = pl; showPlanes(); };
+    li.onmouseleave = () => { hoveredPlane = null; showPlanes(); };
+    li.oncontextmenu = ev => { ev.preventDefault(); showCtxItems(ev, [['br.lookAt', () => lookAtPlane(pl)], ['br.newSketch', () => newSketchOn(pl)]]); };
+  }
   const bodies = lastStatus.bodies;
   const bh = row(1, `${tw(treeOpen.bodies)}${eye(true, '')}<span class="ti">${icon('i-body')}</span><span class="nm">${t('br.bodies')}</span><span class="cnt">${bodies.length}</span>`);
   bh.querySelector('.tw').onclick = () => { treeOpen.bodies = !treeOpen.bodies; renderTree(); };
@@ -1528,6 +1603,10 @@ function renderTree() {
     li.querySelector('.eye').onclick = e => { e.stopPropagation(); hid ? hiddenBodies.delete(b.id) : hiddenBodies.add(b.id); applyHidden(); renderTree(); };
     li.querySelector('.act').onclick = e => { e.stopPropagation(); showProps(true); };
     li.onclick = () => { selectedBody = selectedBody === b.id ? null : b.id; const prev = selectedEdge; selectedEdge = null; if (prev) styleEdge(prev); renderSelection(); renderTree(); };
+    li.ondblclick = () => { if (!sketch.active) fitBody(b.id); };
+    li.onmouseenter = () => { const m = modelGroup.children.flatMap(o => { const out = []; o.traverse(x => { if (x.isMesh && bodyOfMesh(x) === b.id) out.push(x); }); return out; })[0]; if (m) hoverMesh(m); };
+    li.onmouseleave = () => hoverMesh(null);
+    li.oncontextmenu = ev => { ev.preventDefault(); showCtxItems(ev, [['br.fitBody', () => fitBody(b.id)], ['br.props', () => showProps(true)], ['br.hide', () => { hid ? hiddenBodies.delete(b.id) : hiddenBodies.add(b.id); applyHidden(); renderTree(); }], ['br.find', () => findInTimeline(b.id)]]); };
   }
   // The eye on a sketch only hides its display (as in Fusion); suppressing a feature stays in the context menu.
   const sketches = doc.timeline.map((f, i) => [f, i]).filter(([f]) => f.type === 'Sketch');
@@ -1538,11 +1617,18 @@ function renderTree() {
   if (treeOpen.sketches) for (const [f, i] of sketches) {
     const sup = doc.suppressed.includes(f.id), hid = hiddenSketches.has(f.id);
     const li = row(2, `<span class="tw"></span>${eye(!hid, t('br.hide'))}<span class="ti">${icon('i-sketch')}</span><span class="nm mono">${f.id}${sup ? ` <span class="cnt">(${t('suppressed')})</span>` : ''}</span><span class="act" title="${t('br.edit')}">${icon('i-line')}</span>`, (sup || hid) ? 'faded' : '');
+    if (selectedSketch === f.id) li.classList.add('sel');
     li.querySelector('.eye').onclick = e => { e.stopPropagation(); hid ? hiddenSketches.delete(f.id) : hiddenSketches.add(f.id); showSketchLoops(lastStatus.sketches); renderTree(); };
-    li.querySelector('.act').onclick = e => { e.stopPropagation(); editFeature(i); };
-    li.ondblclick = () => editFeature(i);
-    li.oncontextmenu = ev => { ev.preventDefault(); openContext(ev, i); };
+    li.querySelector('.act').onclick = e => { e.stopPropagation(); editSketchFromTree(i); };
+    li.onclick = () => { selectedSketch = selectedSketch === f.id ? null : f.id; showSketchLoops(lastStatus.sketches); findInTimeline(f.id); renderTree(); };
+    li.ondblclick = () => editSketchFromTree(i);
+    li.oncontextmenu = ev => { ev.preventDefault(); showCtxItems(ev, [['ctx.editSketch', () => editSketchFromTree(i)], ['br.lookAt', () => lookAtSketch(f.id)], ['br.hide', () => { hid ? hiddenSketches.delete(f.id) : hiddenSketches.add(f.id); showSketchLoops(lastStatus.sketches); renderTree(); }], [sup ? 'ctx.unsuppress' : 'ctx.suppress', () => toggleSuppress(i)], ['br.find', () => findInTimeline(f.id)]]); };
   }
+}
+/** Edit a sketch from the Browser; a sketch already being edited is finished first (Fusion asks, cadrust commits). */
+function editSketchFromTree(i) {
+  if (sketch.active) { if (sketch.index === i) return; exitSketch(true); }
+  enterSketch(i);
 }
 /** Body id of a mesh node: glb node name when it matches, else the smallest body bbox containing its centre. */
 function bodyOfMesh(m) {
@@ -1642,6 +1728,12 @@ function renderSelection() {
 }
 
 // ---------- context menu ----------
+/** Context menu at the pointer from [i18n key, action] pairs. */
+function showCtxItems(ev, items) {
+  const c = $('ctx'); c.innerHTML = '';
+  for (const [k, fn] of items) { const d = document.createElement('div'); d.textContent = t(k); d.onclick = () => { c.style.display = 'none'; fn(); }; c.appendChild(d); }
+  c.style.display = 'block'; c.style.left = Math.min(ev.clientX, innerWidth - 170) + 'px'; c.style.top = Math.min(ev.clientY, innerHeight - 160) + 'px';
+}
 function openContext(ev, i) {
   const c = $('ctx'); c.innerHTML = '';
   const sup = doc.suppressed.includes(doc.timeline[i].id);
@@ -2925,7 +3017,9 @@ window.cadrust = {
   tab: () => [...document.querySelectorAll('.rtab.active')].map(b => b.dataset.tab),
   hidden: () => [...hiddenBodies],
   hiddenSketches: () => [...hiddenSketches],
+  selectedPlane: () => selectedPlane, selectedSketch: () => selectedSketch, planeVisible: (pl) => planeMeshes[pl].visible,
   camera: () => { const d = camera.position.clone().sub(controls.target).normalize(); return [d.x, d.y, d.z]; },
+  target: () => [controls.target.x, controls.target.y, controls.target.z],
   navMode: () => ({ [THREE.MOUSE.ROTATE]: 'orbit', [THREE.MOUSE.PAN]: 'pan', [THREE.MOUSE.DOLLY]: 'zoom' })[controls.mouseButtons.LEFT],
   projection: (m) => { if (m) setProjection(m); return camera.isOrthographicCamera ? 'ortho' : 'persp'; },
   importFile: (name, bytes) => importModel(new File([bytes], name)),
