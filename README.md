@@ -241,12 +241,14 @@ the WIT component-model add-in API (a packed-buffer ABI is used instead).
 
 **Taewook Kang** ([laputa99999@gmail.com](mailto:laputa99999@gmail.com), [github.com/mac999](https://github.com/mac999)).
 
-The user experience was built by reverse engineering the layout and interaction model of Autodesk
-Fusion's Design workspace from its public interface and documentation, then using that model as a
-harness for the implementation: every ribbon group, panel, dialog and shortcut was placed where a
-Fusion user expects it and the browser test suites check the behaviour against that reference.
-No Fusion code or binaries were used; Fusion is a trademark of Autodesk, Inc., which is not affiliated
-with this project.
+This project draws on the author's experience developing CAD engines. The feature set and the menu
+structure of commercial parametric modelers were reviewed at the level of their visible commands only,
+to decide which operations a modeler of this kind needs and how they are usually grouped; the
+implementation itself is built from existing open-source libraries and published algorithms
+(B-rep modelling and boolean operations in Open CASCADE Technology, constraint solving, persistent
+naming by face history, content-keyed incremental evaluation). No third-party CAD code or binaries
+were used. Product names mentioned in this repository are trademarks of their respective owners, who
+are not affiliated with this project.
 
 Thanks to the projects this one stands on: Open CASCADE Technology, the `cadrum` crate that brings it
 to Rust and WebAssembly, the `kcl-ezpz` constraint solver, three.js, wasmi, axum and the Rust
