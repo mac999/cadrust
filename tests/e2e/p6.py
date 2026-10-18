@@ -91,6 +91,15 @@ with sync_playwright() as p:
     pg.click('#navbar [data-nav=pan]'); check('pan mode', pg.evaluate('cadrust.navMode()') == 'pan')
     pg.click('#navbar [data-nav=orbit]')
 
+    # right click: the marking menu opens and the browser's own context menu is suppressed, also over the menu itself
+    vb = pg.evaluate("(() => { const r = document.querySelector('#viewport canvas.main').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    pg.mouse.click(vb[0] + vb[2] / 2, vb[1] + vb[3] / 2, button='right'); pg.wait_for_timeout(200)
+    check('marking menu opens on right click', len(pg.evaluate('cadrust.mark()')) == 8, str(pg.evaluate('cadrust.mark()')))
+    prevented = pg.evaluate("[document.querySelector('#mark'), document.querySelector('#viewport canvas.main'), document.querySelector('#timeline')].map(el => { const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true }); el.dispatchEvent(e); return e.defaultPrevented; })")
+    check('browser context menu suppressed over the menu, canvas and timeline', prevented == [True, True, True], str(prevented))
+    check('text fields keep the native menu', pg.evaluate("(() => { const i = document.querySelector('#lang') || document.querySelector('input'); const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true }); document.querySelector('#newPName').dispatchEvent(e); return !e.defaultPrevented; })()"))
+    pg.keyboard.press('Escape'); pg.wait_for_timeout(100)
+
     # file menu + help menu open/close, rich tooltip
     pg.click('#btnFile'); check('file menu opens', pg.is_visible('#fileMenu')); pg.keyboard.press('Escape'); check('Esc closes menu', not pg.is_visible('#fileMenu'))
     pg.hover('button.tool[data-tool=Fillet]'); pg.wait_for_timeout(150)

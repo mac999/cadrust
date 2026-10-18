@@ -1886,6 +1886,9 @@ renderer.domElement.addEventListener('pointermove', ev => {
   renderer.domElement.style.cursor = measure.on ? 'crosshair' : (l || hit) ? 'pointer' : '';
 });
 renderer.domElement.addEventListener('contextmenu', ev => ev.preventDefault());
+// The browser's own context menu never belongs in the app: the marking menu appears under the cursor on
+// pointer-up, so the following contextmenu event targets the menu, not the canvas. Text fields keep theirs.
+document.addEventListener('contextmenu', ev => { if (!ev.target.closest('input, textarea, [contenteditable]')) ev.preventDefault(); });
 renderer.domElement.addEventListener('pointerup', ev => {
   const moved = downPos && (Math.abs(ev.clientX - downPos[0]) + Math.abs(ev.clientY - downPos[1]) > 4);
   if (sketch.active) { sketchPointerUp(ev, moved); return; }
