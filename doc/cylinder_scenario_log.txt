@@ -1,0 +1,45 @@
+PASS parameters set
+PASS two circles
+PASS barrel sketch DOF 0
+PASS barrel volume
+PASS stage 1 barrel: STEP saved
+PASS square drawn
+PASS rear cap square DOF 0
+PASS rear cap with bolt holes DOF 0
+PASS rear cap joined
+PASS stage 2 rear_cap: STEP saved
+PASS face picked for the front cap
+PASS sketch plane is the top face
+PASS square drawn
+PASS front cap DOF 0
+PASS front cap joined with rod bore
+PASS front sketch keeps the face name
+PASS stage 3 front_cap: STEP saved
+PASS rod sketch DOF 0
+PASS rod body
+PASS rod tip chamfered
+PASS stage 4 rod: STEP saved
+PASS cap corner fillet
+PASS appearance set
+PASS stage 5 details: STEP saved
+PASS undo x3 removes three features
+PASS redo x3 restores the model
+PASS redo replays from the cache
+PASS cap = 70 widens both end caps
+PASS rod branch reused after the parameter edit
+PASS stage 6 cap70: STEP saved
+PASS undo restores cap = 60
+PASS rear cap sketch re-opened
+PASS found the height distance constraint
+PASS constraint removed frees one DOF
+PASS new distance makes the sketch rigid again
+PASS rear cap height is 80 in the solved sketch
+PASS rear cap 60 x 80 in the model
+PASS stage 7 rear_cap_80: STEP saved
+PASS undo restores the 60 x 60 rear cap
+PASS redo re-applies the constraint edit
+PASS history marker rolls back two features
+PASS marker back to the end
+PASS saved on the server
+PASS no console errors
+FAILS []

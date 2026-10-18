@@ -1,0 +1,122 @@
+"""Fusion-style chrome: ribbon tabs and group menus, browser visibility, timeline marker, data panel, viewcube, nav modes."""
+import sys, json
+import os, sys
+# Playwright for Python: `pip install playwright && playwright install chromium`, or point PYLIBS at a site-packages folder.
+if os.environ.get('PYLIBS'): sys.path.insert(0, os.environ['PYLIBS'])
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')) + '/'
+from playwright.sync_api import sync_playwright
+OUT = REPO + 'doc/'
+errors, fails = [], []
+def check(name, cond, info=''):
+    print(('PASS' if cond else 'FAIL'), name, info)
+    if not cond: fails.append(name)
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'])
+    pg = b.new_page(viewport={'width': 1600, 'height': 1000})
+    pg.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
+    pg.on('console', lambda m: errors.append('console.error: ' + m.text) if m.type == 'error' else None)
+    pg.goto('http://127.0.0.1:8080/?theme=dark&lang=en'); pg.wait_for_timeout(3500)
+    check('design tab shows the file name', pg.inner_text('#docName') == 'bracket', pg.inner_text('#docName'))
+    check('solid tab active', pg.evaluate('cadrust.tab()') == ['solid'])
+    tree = pg.evaluate('cadrust.tree()')
+    check('browser tree has bodies and sketches', any(t.startswith('▾Bodies') for t in tree) and 'base' in tree and 'base_sk' in tree, str(tree))
+    pg.screenshot(path=OUT + 'webapp_dark_en.png')
+
+    # ribbon group menu lists the commands with shortcuts
+    pg.click('.rlabel[data-menu=create]'); pg.wait_for_timeout(150)
+    items = pg.evaluate("[...document.querySelectorAll('#groupMenu .mi')].map(d => d.textContent.trim())")
+    check('create menu lists commands', any(i.startswith('Extrude') and i.endswith('E') for i in items) and len(items) >= 10, str(items))
+    pg.click('#groupMenu .mi >> text=Extrude'); pg.wait_for_timeout(300)
+    check('menu item starts the tool', pg.is_visible('#dialog') and 'EXTRUDE' in pg.inner_text('#dialog .dh').upper(), pg.inner_text('#dialog .dh'))
+    pg.click('#dCancel')
+
+    # tabs
+    pg.click('.rtab[data-tab=util]'); pg.wait_for_timeout(100)
+    check('utilities tab', pg.evaluate('cadrust.tab()') == ['util'] and pg.is_visible('#btnStl'))
+    pg.click('.rtab[data-tab=solid]')
+
+    # pattern submenu
+    pg.click('#btnPatternMenu'); pg.click('#patternMenu [data-tool=CircularPattern]'); pg.wait_for_timeout(300)
+    check('pattern submenu opens circular pattern', 'CIRCULAR' in pg.inner_text('#dialog .dh').upper(), pg.inner_text('#dialog .dh'))
+    pg.click('#dCancel')
+
+    # browser eye hides a body (meshes + edges)
+    pg.click('#tree li.d2 .eye >> nth=0'); pg.wait_for_timeout(200)
+    hid = pg.evaluate('cadrust.hidden()')
+    vis = pg.evaluate("(() => { let m = 0, v = 0; cadrust.model().forEach(([t,,,vis]) => { if (t === 'Mesh') { m++; if (vis) v++; } }); return [m, v]; })()")
+    check('hide body via browser', hid == ['base'] and vis[0] > 0 and vis[1] == 0, str((hid, vis)))
+    pg.click('#tree li.d2 .eye >> nth=0'); pg.wait_for_timeout(200)
+    check('show body again', pg.evaluate('cadrust.hidden()') == [])
+
+    # timeline history marker: roll back two features, new feature inserts at the marker, roll to end
+    n = len(pg.evaluate('cadrust.doc().timeline'))
+    pg.click('#tlPrev'); pg.wait_for_timeout(1200); pg.click('#tlPrev'); pg.wait_for_timeout(1200)
+    r = pg.evaluate('cadrust.roll()')
+    check('marker rolled back', r['index'] == n - 2 and r['sent'] == n - 2, str(r))
+    ids_sent = [s['id'] for s in pg.evaluate('cadrust.status().status')]
+    check('status only has computed features', len(ids_sent) == n - 2, str(len(ids_sent)))
+    pg.screenshot(path=OUT + 'ui_timeline_marker.png')
+    pg.keyboard.press('e'); pg.wait_for_timeout(300)
+    pg.evaluate("document.activeElement.blur()"); pg.keyboard.press('Enter'); pg.wait_for_timeout(1200)
+    tl = pg.evaluate('cadrust.doc().timeline')
+    check('new feature inserted at the marker', len(tl) == n + 1 and tl[n - 2]['type'] == 'Extrude', str([f['id'] for f in tl]))
+    pg.click('#btnUndo'); pg.wait_for_timeout(1000)
+    pg.click('#tlLast'); pg.wait_for_timeout(1200)
+    r = pg.evaluate('cadrust.roll()')
+    check('marker back at end', r['roll'] is None and r['sent'] == n, str(r))
+    # context menu roll
+    pg.click('#timeline .feat >> nth=2', button='right'); pg.wait_for_timeout(100)
+    pg.click('#ctx >> text=Roll history marker here'); pg.wait_for_timeout(1200)
+    check('roll here from context menu', pg.evaluate('cadrust.roll().index') == 3)
+    pg.click('#tlLast'); pg.wait_for_timeout(1200)
+
+    # data panel lists designs next to the served document and opens one
+    pg.click('#btnData'); pg.wait_for_timeout(400)
+    names = pg.evaluate("[...document.querySelectorAll('#dpList .ex .nm')].map(d => d.textContent)")
+    check('data panel lists designs', 'bracket' in names and 'phase2' in names, str(names))
+    pg.click('#dpList .ex >> text=phase2'); pg.wait_for_timeout(2500)
+    check('open design switches document', pg.inner_text('#docName') == 'phase2' and pg.evaluate('cadrust.status().bodies.length') >= 1, pg.inner_text('#docName'))
+    pg.click('#btnData'); pg.click('#dpList .ex >> text=bracket'); pg.wait_for_timeout(2500)
+    check('back to bracket', pg.inner_text('#docName') == 'bracket')
+
+    # viewcube click on the TOP face changes the view direction
+    before = pg.evaluate('[...cadrust.camera()]')
+    vb = pg.evaluate("(() => { const r = document.querySelector('#vcCanvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    pg.mouse.click(vb[0] + vb[2] * 0.56, vb[1] + vb[3] * 0.25); pg.wait_for_timeout(500)
+    after = pg.evaluate('[...cadrust.camera()]')
+    check('viewcube top face looks down z', abs(after[0]) < 1e-3 and abs(after[1]) < 1e-3 and after[2] > 0.99, str((before, after)))
+    pg.evaluate("cadrust.view('iso')")
+
+    # navigation bar pan mode changes the left-drag binding
+    pg.click('#navbar [data-nav=pan]'); check('pan mode', pg.evaluate('cadrust.navMode()') == 'pan')
+    pg.click('#navbar [data-nav=orbit]')
+
+    # file menu + help menu open/close, rich tooltip
+    pg.click('#btnFile'); check('file menu opens', pg.is_visible('#fileMenu')); pg.keyboard.press('Escape'); check('Esc closes menu', not pg.is_visible('#fileMenu'))
+    pg.hover('button.tool[data-tool=Fillet]'); pg.wait_for_timeout(150)
+    check('rich tooltip', pg.is_visible('#tip') and pg.inner_text('#tip .tt').startswith('Fillet'), pg.inner_text('#tip'))
+
+    # change parameters panel edits a parameter and rebuilds
+    pg.click('#btnParams'); pg.wait_for_timeout(100)
+    v0 = pg.evaluate("cadrust.status().bodies[0].volume")
+    pg.fill('#params input >> nth=1', '50'); pg.press('#params input >> nth=1', 'Enter'); pg.wait_for_timeout(1500)
+    v1 = pg.evaluate("cadrust.status().bodies[0].volume")
+    check('parameter edit rebuilds', abs(v1 - v0) > 1, str((v0, v1)))
+    pg.click('#btnUndo'); pg.wait_for_timeout(1000); pg.click('#btnParamsClose')
+
+    # sketch tab appears in sketch mode and goes away after
+    pg.click('button.tool[data-tool=Sketch]'); pg.click('#dOk'); pg.wait_for_timeout(600)
+    check('sketch contextual tab', pg.evaluate('cadrust.tab()') == ['sketch'] and pg.is_visible('#sketchbar') and pg.is_visible('#skpanel'))
+    pg.screenshot(path=OUT + 'ui_sketch_mode.png')
+    pg.click('#btnCancelSketch'); pg.wait_for_timeout(600)
+    check('back to solid tab', pg.evaluate('cadrust.tab()') == ['solid'] and not pg.is_visible('#sketchbar'))
+
+    # light theme + korean screenshot
+    pg.select_option('#lang', 'ko'); pg.click('#btnTheme'); pg.wait_for_timeout(400)
+    check('ko ribbon labels', pg.inner_text('.rtab[data-tab=solid]') == '솔리드' and pg.inner_text('.rlabel[data-menu=modify]').startswith('수정'))
+    pg.screenshot(path=OUT + 'webapp_light_ko.png')
+    pg.select_option('#lang', 'en'); pg.click('#btnTheme')
+
+    check('no console errors', not errors, '\n'.join(errors[:5]))
+    b.close()
+print('FAILS', fails)

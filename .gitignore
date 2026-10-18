@@ -1,0 +1,13 @@
+target/
+*.step
+*.glb
+*.stl
+!examples/*.step
+node_modules/
+web/*.wasm
+web/addins/
+web/examples/
+web/examples.json
+doc/*.webm
+__pycache__/
+*.pyc
