@@ -844,6 +844,7 @@ Object.assign(STRINGS.en, {
   'extent.distance':'Distance','extent.all':'Through all','btn.pickFaces':'Pick faces','pick.faceCount':'{n} faces picked. Click faces in the viewport to add.','pick.faceNone':'No faces picked. Click faces in the viewport.',
   'display.persp':'Perspective','display.ortho':'Orthographic','msg.imported':'Imported {n} solid(s) from {f}','msg.importFail':'Import failed: {e}','sh.presspull':'Press Pull (face: offset, edge: fillet, else extrude)',
   'btn.json':'cadrust JSON','btn.rebuild':'Compute All','file.new':'New Design','file.open':'Open…','file.export':'Export','file.download':'Download JSON',
+  'sel.face':'Face of {body} at {p}','sel.sketch':'Sketch {id}','pick.faceAuto':'Click a planar face of a body, or a plane in the Browser, to start the sketch there.',
   'br.lookAt':'Look At','br.newSketch':'Create Sketch on this plane','br.find':'Find in timeline','br.fitBody':'Zoom to body','ctx.editSketch':'Edit Sketch',
   'view.home':'Home','view.top':'Top','view.bottom':'Bottom','view.front':'Front','view.back':'Back','view.right':'Right','view.left':'Left',
   'file.saveas':'Save As…','file.exportdlg':'Export…','sv.save':'Save','sv.saveas':'Save As','sv.export':'Export','sv.name':'Name','sv.format':'Format','sv.location':'Location','sv.server':'Project folder (server)','sv.computer':'This computer','sv.browser':'Browser storage',
@@ -879,6 +880,7 @@ Object.assign(STRINGS.ko, {
   'extent.distance':'거리','extent.all':'전체 관통','btn.pickFaces':'면 선택','pick.faceCount':'{n}개 면 선택. 뷰포트에서 면을 클릭해 추가합니다.','pick.faceNone':'선택한 면이 없습니다. 뷰포트에서 면을 클릭하세요.',
   'display.persp':'원근','display.ortho':'직교','msg.imported':'{f}에서 솔리드 {n}개를 가져왔습니다','msg.importFail':'가져오기 실패: {e}','sh.presspull':'누르기/당기기 (면: 간격띄우기, 모서리: 모깎기, 없으면 돌출)',
   'btn.json':'cadrust JSON','btn.rebuild':'모두 계산','file.new':'새 디자인','file.open':'열기…','file.export':'내보내기','file.download':'JSON 다운로드',
+  'sel.face':'{body}의 면, 점 {p}','sel.sketch':'스케치 {id}','pick.faceAuto':'바디의 평면이나 브라우저의 평면을 클릭하면 그 위에서 스케치가 시작됩니다.',
   'br.lookAt':'보기 방향 맞춤','br.newSketch':'이 평면에 스케치 작성','br.find':'타임라인에서 찾기','br.fitBody':'바디로 확대','ctx.editSketch':'스케치 편집',
   'view.home':'홈','view.top':'위','view.bottom':'아래','view.front':'앞','view.back':'뒤','view.right':'오른쪽','view.left':'왼쪽',
   'file.saveas':'다른 이름으로 저장…','file.exportdlg':'내보내기…','sv.save':'저장','sv.saveas':'다른 이름으로 저장','sv.export':'내보내기','sv.name':'이름','sv.format':'형식','sv.location':'위치','sv.server':'프로젝트 폴더(서버)','sv.computer':'이 컴퓨터','sv.browser':'브라우저 저장소',
@@ -1163,10 +1165,16 @@ function setRay(ev) {
   raycaster.setFromCamera(ndc, camera);
   raycaster.params.Line.threshold = Math.max(0.2, modelSize * 0.006);
 }
+/** Nearest visible B-rep edge under the cursor. Edges hidden behind a face are skipped: an edge on the
+ *  surface sits at the same depth as the mesh hit, a hidden one lies well beyond it. */
 function edgeUnderCursor(ev) {
   setRay(ev);
   const hits = raycaster.intersectObjects(edgeGroup.children, false);
-  return hits.length ? hits[0].object : null;
+  if (!hits.length) return null;
+  const mesh = raycaster.intersectObjects(modelGroup.children, true).find(h => h.object.visible);
+  const tol = Math.max(0.5, modelSize * 0.01);
+  const vis = hits.find(h => !mesh || h.distance <= mesh.distance + tol);
+  return vis ? vis.object : null;
 }
 /** Nearest model face under the cursor: {point, normal, object, body}. */
 function faceUnderCursor(ev) {
@@ -1175,7 +1183,7 @@ function faceUnderCursor(ev) {
   if (!hits.length) return null;
   const h = hits[0];
   const n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : new THREE.Vector3(0, 0, 1);
-  return { point: h.point.clone(), normal: n, object: h.object, body: bodyOfHit(h) };
+  return { point: h.point.clone(), normal: n, object: h.object, body: bodyOfHit(h), face: h.face, faceIndex: h.faceIndex };
 }
 /** Body id for a glb hit: node name if it matches a body, else the smallest body bbox containing the point. */
 function bodyOfHit(h) {
@@ -1193,13 +1201,51 @@ function bodyOfHit(h) {
 }
 const faceMarkerGroup = new THREE.Group(); scene.add(faceMarkerGroup);
 let tintedMesh = null;
+/** Triangles of the planar face under a raycast hit: coplanar with the hit triangle and connected to it. */
+function faceTriangles(hit) {
+  const geo = hit.object.geometry, pos = geo.attributes.position, idx = geo.index;
+  const tri = i => [0, 1, 2].map(k => idx ? idx.getX(3 * i + k) : 3 * i + k);
+  const count = idx ? idx.count / 3 : pos.count / 3;
+  const m = hit.object.matrixWorld, nrm = hit.face.normal.clone().transformDirection(m).normalize();
+  const world = v => new THREE.Vector3().fromBufferAttribute(pos, v).applyMatrix4(m);
+  const d0 = nrm.dot(hit.point), tol = Math.max(1e-3, modelSize * 1e-4);
+  const key = v => { const w = world(v); return `${Math.round(w.x * 1e3)},${Math.round(w.y * 1e3)},${Math.round(w.z * 1e3)}`; };
+  // coplanar triangles, grouped by shared vertex positions so only the region around the hit counts
+  const coplanar = new Set();
+  for (let i = 0; i < count; i++) {
+    const vs = tri(i), ws = vs.map(world);
+    const e1 = ws[1].clone().sub(ws[0]), e2 = ws[2].clone().sub(ws[0]), n = e1.cross(e2).normalize();
+    if (n.dot(nrm) < 0.995) continue;
+    if (ws.every(w => Math.abs(nrm.dot(w) - d0) < tol)) coplanar.add(i);
+  }
+  const byVertex = new Map();
+  for (const i of coplanar) for (const v of tri(i)) { const k = key(v); (byVertex.get(k) || byVertex.set(k, []).get(k)).push(i); }
+  const region = new Set([hit.faceIndex]), stack = [hit.faceIndex];
+  while (stack.length) { const i = stack.pop(); for (const v of tri(i)) for (const j of byVertex.get(key(v)) || []) if (!region.has(j)) { region.add(j); stack.push(j); } }
+  const pts = [];
+  for (const i of region) for (const v of tri(i)) pts.push(world(v));
+  return { pts, normal: nrm };
+}
+let faceHl = { key: null, body: null, tris: 0 };
+const faceHlGroup = new THREE.Group(); scene.add(faceHlGroup);
+/** Highlight the whole planar face under the cursor (translucent accent), or clear it. */
+function faceHighlight(hit, strong = false) {
+  const k = hit ? `${hit.object.uuid}:${hit.faceIndex}:${strong}` : null;
+  if (k === faceHl.key) return;
+  faceHlGroup.clear(); faceHl = { key: k, body: hit ? hit.body : null, tris: 0 };
+  if (!hit || !hit.face) return;
+  const { pts, normal } = faceTriangles(hit);
+  const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => p.clone().addScaledVector(normal, Math.max(0.02, modelSize * 2e-4))));
+  faceHlGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: cssVar(strong ? '--pick' : '--accent2') || '#5cc0f2', transparent: true, opacity: strong ? 0.45 : 0.3, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })));
+  faceHl.tris = pts.length / 3;
+}
 function faceMarker(hit) {
   faceMarkerGroup.clear();
   if (tintedMesh) { tintedMesh.material.emissive.set(0x000000); tintedMesh = null; }
+  faceHighlight(hit, true);
   if (!hit) return;
   const g = new THREE.BufferGeometry().setFromPoints([hit.point]);
   faceMarkerGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color: cssVar('--pick') || '#f59e0b', size: 10, sizeAttenuation: false, depthTest: false })));
-  if (hit.object.isMesh && hit.object.material.emissive) { tintedMesh = hit.object; tintedMesh.material.emissive.set(0x224466); }
 }
 let hoveredMesh = null;
 /** Subtle emissive tint on the body under the cursor (never fights the face-pick tint). */
@@ -1219,7 +1265,7 @@ function showSketchLoops(sketches) {
   for (const s of sketches || []) {
     if (hiddenSketches.has(s.id)) continue;
     const mat = s.id === selectedSketch ? selMat : okMat;
-    for (const loop of s.loops || []) sketchGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(loop.map(p => new THREE.Vector3(...p))), mat));
+    for (const loop of s.loops || []) { const ln = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(loop.map(p => new THREE.Vector3(...p))), mat); ln.userData.sketch = s.id; sketchGroup.add(ln); }
     for (const ch of s.open || []) sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ch.map(p => new THREE.Vector3(...p))), badMat));
   }
 }
@@ -1587,7 +1633,7 @@ function renderTree() {
   org.querySelector('.eye').onclick = () => { toggleAxes(); renderTree(); };
   if (treeOpen.origin) for (const pl of ['XY', 'XZ', 'YZ']) {
     const li = row(2, `<span class="tw"></span><span class="eye" style="visibility:hidden">${icon('i-eye')}</span><span class="ti">${icon('i-plane')}</span><span class="nm">${pl}</span>`, 'plane' + (selectedPlane === pl ? ' sel' : ''));
-    li.onclick = () => { selectedPlane = selectedPlane === pl ? null : pl; showPlanes(); renderTree(); };
+    li.onclick = () => { if (dialog.open && dialog.type === 'SketchStart') { closeDialog(); newSketchOn(pl); return; } selectedPlane = selectedPlane === pl ? null : pl; showPlanes(); renderTree(); };
     li.ondblclick = () => { selectedPlane = pl; showPlanes(); newSketchOn(pl); };
     li.onmouseenter = () => { hoveredPlane = pl; showPlanes(); };
     li.onmouseleave = () => { hoveredPlane = null; showPlanes(); };
@@ -1722,7 +1768,9 @@ function renderSelection() {
   const s = $('selinfo');
   const b = selectedBody && lastStatus.bodies.find(x => x.id === selectedBody);
   if (selectedEdge) { const u = selectedEdge.userData; s.textContent = t('sel.edge', { name: u.name || u.id, body: u.body, mid: u.mid.map(fmt).join(', ') }); }
+  else if (b && lastFaceHit) s.textContent = t('sel.face', { body: b.id, p: lastFaceHit.point.map(fmt).join(', ') }) + ' · ' + t('sel.body', { id: b.id, vol: fmt(b.volume), area: fmt(b.area) });
   else if (b) s.textContent = t('sel.body', { id: b.id, vol: fmt(b.volume), area: fmt(b.area) });
+  else if (selectedSketch) s.textContent = t('sel.sketch', { id: selectedSketch });
   else s.textContent = '';
   document.querySelectorAll('#tree li.d2').forEach(li => li.classList.toggle('sel', !!selectedBody && li.querySelector('.nm') && li.querySelector('.nm').textContent === selectedBody && !!li.querySelector('use[href="#i-body"]')));
 }
@@ -1807,7 +1855,7 @@ function drawPickMarkers() {
   const g = new THREE.BufferGeometry().setFromPoints(pts.map(m => new THREE.Vector3(...m)));
   pickGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color: cssVar('--pick') || '#f59e0b', size: 10, sizeAttenuation: false, depthTest: false })));
 }
-function closeDialog() { pickGroup.clear(); faceMarker(null); dialog.open = false; dialog.pointPick = null; dialog.facePick = false; dialog.facePicks = null; dialog.onFacePick = null; dialog.type = null; dialog.index = null; dialog.picks = null; dialog.el.style.display = 'none'; dialog.el.innerHTML = ''; edgeGroup.children.forEach(styleEdge); }
+function closeDialog() { pickGroup.clear(); faceMarker(null); faceHighlight(null); dialog.open = false; dialog.pointPick = null; dialog.facePick = false; dialog.facePicks = null; dialog.onFacePick = null; dialog.type = null; dialog.index = null; dialog.picks = null; dialog.el.style.display = 'none'; dialog.el.innerHTML = ''; edgeGroup.children.forEach(styleEdge); }
 function editFeature(i) { if (sketch.active) return; const f = doc.timeline[i]; if (f.type === 'Sketch') enterSketch(i); else openDialog(f.type, i); }
 function startTool(type) {
   if (sketch.active) return;
@@ -1872,7 +1920,7 @@ function openDialog(type, index, preset = null) {
       if (fd.optional) s.add(new Option('—', ''));
       for (const o of opts) s.add(new Option(pre ? t(pre + o) : o, o));
       // an optional target defaults to the newest body, as Fusion picks the body under the profile
-      s.value = cur ?? fd.d ?? (fd.optional ? (fd.k === 'target' && bodies.length ? bodies[bodies.length - 1] : '') : opts[0]);
+      s.value = cur ?? fd.d ?? (fd.optional ? (fd.k === 'target' && bodies.length ? bodies[bodies.length - 1] : '') : (fd.t === 'sketch' ? (selectedSketch && sketches.includes(selectedSketch) ? selectedSketch : sketches[sketches.length - 1]) : opts[0]));
       row.appendChild(s); inputs[fd.k] = () => s.value === '' ? undefined : s.value;
       if (fd.t === 'op' && def.fields.some(x => x.k === 'target')) s.onchange = () => { const tr = el.querySelector('[data-k=target]'); if (tr) tr.style.display = s.value === 'NewBody' ? 'none' : 'flex'; };
     }
@@ -1978,7 +2026,8 @@ renderer.domElement.addEventListener('pointermove', ev => {
   const l = edgesPickable() ? edgeUnderCursor(ev) : null;
   if (l !== hoveredEdge) { const prev = hoveredEdge; hoveredEdge = l; if (prev) styleEdge(prev); if (l) styleEdge(l); }
   const hit = !l && (measure.on || !filterAllows('edges') || selFilter === 'all') ? faceUnderCursor(ev) : null;
-  hoverMesh(hit ? hit.object : null);
+  if (selFilter === 'bodies') { hoverMesh(hit ? hit.object : null); faceHighlight(null); }
+  else { hoverMesh(null); faceHighlight(hit && !measure.on ? hit : null); }
   renderer.domElement.style.cursor = measure.on ? 'crosshair' : (l || hit) ? 'pointer' : '';
 });
 renderer.domElement.addEventListener('contextmenu', ev => ev.preventDefault());
@@ -2002,6 +2051,13 @@ renderer.domElement.addEventListener('pointerup', ev => {
   const prev = selectedEdge; selectedEdge = l; if (prev) styleEdge(prev); if (l) styleEdge(l);
   selectedBody = null;
   lastFaceHit = null;
+  // sketch loops in the viewport select their sketch (then E extrudes it)
+  if (!l) {
+    setRay(ev); raycaster.params.Line.threshold = 6 * worldPerPx();
+    const sh = raycaster.intersectObjects(sketchGroup.children, false)[0];
+    raycaster.params.Line.threshold = 1;
+    if (sh && sh.object.userData.sketch) { selectedSketch = selectedSketch === sh.object.userData.sketch ? null : sh.object.userData.sketch; showSketchLoops(lastStatus.sketches); renderTree(); renderSelection(); return; }
+  }
   if (!l && (filterAllows('bodies') || filterAllows('faces'))) { const hit = faceUnderCursor(ev); if (hit) { selectedBody = hit.body; lastFaceHit = { body: hit.body, point: [hit.point.x, hit.point.y, hit.point.z].map(x => Math.round(x * 100) / 100) }; } }
   renderSelection();
 });
@@ -2165,17 +2221,22 @@ function openSketchStart() {
     <div class="note" id="skFaceNote">${t('sk.faceNone')}</div></div>
     <div class="dfoot"><button class="btn" id="dCancel">${t('btn.cancel')}</button><button class="btn primary" id="dOk">${t('btn.ok')}</button></div>`;
   const faceBtn = el.querySelector('#skFace'), note = el.querySelector('#skFaceNote');
-  faceBtn.onclick = () => {
-    if (dialog.pointPick) { dialog.pointPick = null; faceBtn.classList.remove('active'); faceMarker(null); return; }
-    if (!lastStatus.bodies.length) { msg(t('msg.needBody'), 'err'); return; }
-    faceBtn.classList.add('active'); msg(t('pick.faceHint'), 'ok');
+  const armPick = () => {
+    faceBtn.classList.add('active');
     dialog.pointPick = (p, hit) => {
       facePick = { body: hit && hit.body ? hit.body : lastStatus.bodies[0].id, point: p.map(x => Math.round(x * 100) / 100) };
       faceBtn.classList.remove('active');
       note.textContent = t('sk.facePicked', { body: facePick.body, p: facePick.point.map(fmt).join(', ') });
       el.querySelector('#skPlane').disabled = true; el.querySelector('#skOff').disabled = true;
+      el.querySelector('#dOk').click(); // one click on a face is enough, as in Fusion
     };
   };
+  faceBtn.onclick = () => {
+    if (dialog.pointPick) { dialog.pointPick = null; faceBtn.classList.remove('active'); faceMarker(null); return; }
+    if (!lastStatus.bodies.length) { msg(t('msg.needBody'), 'err'); return; }
+    armPick(); msg(t('pick.faceHint'), 'ok');
+  };
+  if (lastStatus.bodies.length) { armPick(); note.textContent = t('pick.faceAuto'); }
   el.querySelector('#dCancel').onclick = closeDialog;
   el.querySelector('#dOk').onclick = async () => {
     const feat = { type: 'Sketch', id: newId('Sketch'), plane: facePick ? { face: facePick } : el.querySelector('#skPlane').value, entities: [], constraints: [] };
@@ -2225,6 +2286,7 @@ function exitSketch(commitChanges) {
   setTab('solid'); $('readout').style.display = 'none'; $('skpanel').style.display = 'none';
   drawGroup.clear(); closeDialog();
   camera.up.copy(sketch.saved.up); camera.position.copy(sketch.saved.pos); controls.target.copy(sketch.saved.target); controls.enableRotate = true; controls.update();
+  if (commitChanges) selectedSketch = feat.id;
   if (commitChanges) {
     // a new sketch already took its undo snapshot when it was created: one undo step per sketch
     if (isNew) { doc.timeline[idx] = feat; renderAll(); rebuild(); }
@@ -3017,6 +3079,7 @@ window.cadrust = {
   tab: () => [...document.querySelectorAll('.rtab.active')].map(b => b.dataset.tab),
   hidden: () => [...hiddenBodies],
   hiddenSketches: () => [...hiddenSketches],
+  faceHl: () => ({ body: faceHl.body, tris: faceHl.tris }), edgeAt: (x, y) => { const l = edgesPickable() ? edgeUnderCursor({ clientX: x, clientY: y }) : null; return l ? (l.userData.name || l.userData.id) : null; }, hitAt: (x, y) => { const h = faceUnderCursor({ clientX: x, clientY: y }); return h ? { body: h.body, faceIndex: h.faceIndex, hasFace: !!h.face, point: [h.point.x, h.point.y, h.point.z] } : null; }, pickMode: () => !!(dialog.open && (dialog.pointPick || dialog.facePick)),
   selectedPlane: () => selectedPlane, selectedSketch: () => selectedSketch, planeVisible: (pl) => planeMeshes[pl].visible,
   camera: () => { const d = camera.position.clone().sub(controls.target).normalize(); return [d.x, d.y, d.z]; },
   target: () => [controls.target.x, controls.target.y, controls.target.z],
