@@ -15,10 +15,9 @@ without any server. CAD, in Rust, hence the name.
 This project was also undertaken to gauge how far AI-assisted reverse engineering of software has
 come: starting from the visible commands and menus of a modern parametric modeler, how much of a
 working modeler (kernel, document model, constraint solver, naming, user interface) can be rebuilt on
-open-source foundations, and how well the result holds up under scripted end-to-end tests. With the
-main modelling features in place that question is answered, so active development has stopped at this
-point; further features will be added now and then as personal time allows. The project is shared as
-it stands, and issues and pull requests are welcome.
+open-source foundations, and how well the result holds up under scripted end-to-end tests. That goal
+has been reached, so the project is wrapped up at this level; more precise modelling features will be
+added and refined as time allows.
 
 - **Sketch, constrain, extrude.** Sketches with lines, arcs, circles, rectangles and polygons on base
   planes or on any planar face of a body; a 2D constraint solver (horizontal, vertical, coincident,
