@@ -53,11 +53,6 @@ dimensions and constraint list):
 
 ![constraint edit](doc/cyl_constraint_edit.png)
 
-The dependency chain of a hovered feature (upstream blue, downstream orange) and the rebuild message
-reporting how many features were replayed from the evaluation cache:
-
-![dependency hover](doc/ui_dependency_hover.png)
-
 ## Installation
 
 Prerequisites:
