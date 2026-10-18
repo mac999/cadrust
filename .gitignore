@@ -11,3 +11,10 @@ web/examples.json
 doc/*.webm
 __pycache__/
 *.pyc
+prd.md
+doc/*.png
+!doc/webapp_dark_en.png
+!doc/cyl_05_details.png
+!doc/cyl_constraint_edit.png
+!doc/ui_dependency_hover.png
+doc/cylinder_scenario_log.txt

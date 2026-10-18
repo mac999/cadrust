@@ -39,28 +39,16 @@ end caps sketched on faces, rod, chamfer, fillet, colours), with a STEP file sav
 and a recorded walkthrough in [`doc/cylinder_modeling.mp4`](doc/cylinder_modeling.mp4):
 
 ![cylinder](doc/cyl_05_details.png)
+
+Editing a constraint in the rear cap sketch (the Fusion-style sketch environment with its palette,
+dimensions and constraint list):
+
 ![constraint edit](doc/cyl_constraint_edit.png)
 
-Incremental evaluation after a parameter edit (recomputed features carry an orange dot) and the
-dependency chain of a hovered feature (upstream blue, downstream orange):
+The dependency chain of a hovered feature (upstream blue, downstream orange) and the rebuild message
+reporting how many features were replayed from the evaluation cache:
 
-![incremental](doc/ui_incremental.png)
 ![dependency hover](doc/ui_dependency_hover.png)
-
-More of the UI: the sketch environment, the light theme with the Korean locale, direct modelling and
-the extrude options, STEP import, the measure tool, section analysis, the gear add-in and the Save As
-dialog.
-
-![sketch mode](doc/ui_sketch_mode.png)
-![light theme, Korean](doc/webapp_light_ko.png)
-![taper extrude](doc/ui_taper_extrude.png)
-![offset face](doc/ui_offset_face.png)
-![split body](doc/ui_split_body.png)
-![import step](doc/ui_import_step.png)
-![measure](doc/ui_measure.png)
-![section view](doc/ui_section_view.png)
-![gear add-in](doc/ui_addin_gear.png)
-![save as](doc/ui_save_as.png)
 
 ## Installation
 
@@ -214,7 +202,6 @@ scripts/              build-addins.sh, build-web.sh
 tests/e2e/            Playwright suites (see tests/e2e/README.md)
 examples/             sample documents and the cylinder STEP files
 doc/                  screenshots and the recorded walkthrough
-prd.md                product requirements and design notes
 ```
 
 ## Testing
@@ -231,7 +218,8 @@ OCCT ships prebuilt, and the wasm kernel builds in about 30 s inside the Docker 
 
 ## Status and limits
 
-Implemented: phases 0-5 of `prd.md` plus the v1 extras listed above. Not implemented: draft (no
+Implemented: sketching with constraints, the feature set above, persistent naming, incremental
+evaluation, the Fusion-style web app, the CLI, the serverless build and add-ins. Not implemented: draft (no
 draft-angle call in `cadrum` yet; taper is done by lofting to the 2D-offset profile), extrude "to
 object", non-uniform scale, split by sketch or face, surface / mesh / sheet metal workspaces, joints,
 named views and comments (placeholders in the Browser), STEP metadata validation through ruststep,
