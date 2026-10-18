@@ -248,3 +248,18 @@ the WIT component-model add-in API (a packed-buffer ABI is used instead).
 | three.js | MIT |
 | wasmi (add-in host) | MIT / Apache-2.0 |
 | axum, tokio, serde, clap, evalexpr | MIT / Apache-2.0 |
+
+## Author and acknowledgements
+
+**Taewook Kang** ([laputa99999@gmail.com](mailto:laputa99999@gmail.com), [github.com/mac999](https://github.com/mac999)).
+
+The user experience was built by reverse engineering the layout and interaction model of Autodesk
+Fusion's Design workspace from its public interface and documentation, then using that model as a
+harness for the implementation: every ribbon group, panel, dialog and shortcut was placed where a
+Fusion user expects it and the browser test suites check the behaviour against that reference.
+No Fusion code or binaries were used; Fusion is a trademark of Autodesk, Inc., which is not affiliated
+with this project.
+
+Thanks to the projects this one stands on: Open CASCADE Technology, the `cadrum` crate that brings it
+to Rust and WebAssembly, the `kcl-ezpz` constraint solver, three.js, wasmi, axum and the Rust
+ecosystem.
