@@ -48,6 +48,19 @@ with sync_playwright() as p:
     pg.click('#tree li.d2 .eye >> nth=0'); pg.wait_for_timeout(200)
     check('show body again', pg.evaluate('cadrust.hidden()') == [])
 
+    # the eye on a sketch hides its loops only; the model and the dependent features are untouched
+    n_loops = pg.evaluate('cadrust.model ? 0 : 0')
+    pg.click('#tree li:has-text("base_sk") .eye'); pg.wait_for_timeout(300)
+    check('sketch eye hides the sketch, not the model', pg.evaluate('cadrust.hiddenSketches()') == ['base_sk'] and pg.evaluate('cadrust.status().bodies.length') == 1 and not [s for s in pg.evaluate('cadrust.status().status') if not s['ok']] and not pg.evaluate('cadrust.doc().suppressed'))
+    pg.dblclick('#tree li:has-text("base_sk")'); pg.wait_for_timeout(800)
+    check('hidden sketch can still be edited', pg.evaluate('cadrust.sketch()')['active'] and pg.evaluate('cadrust.sketch()')['feat']['id'] == 'base_sk')
+    pg.click('#btnCancelSketch'); pg.wait_for_timeout(800)
+    pg.click('#tree li:has-text("base_sk") .eye'); pg.wait_for_timeout(200)
+    check('sketch shown again', pg.evaluate('cadrust.hiddenSketches()') == [])
+    pg.click('#tree li.d1:has-text("Sketches") .eye'); pg.wait_for_timeout(200)
+    check('group eye hides every sketch', sorted(pg.evaluate('cadrust.hiddenSketches()')) == ['base_sk', 'wall_sk'] and pg.evaluate('cadrust.status().bodies.length') == 1)
+    pg.click('#tree li.d1:has-text("Sketches") .eye'); pg.wait_for_timeout(200)
+
     # timeline history marker: roll back two features, new feature inserts at the marker, roll to end
     n = len(pg.evaluate('cadrust.doc().timeline'))
     pg.click('#tlPrev'); pg.wait_for_timeout(1200); pg.click('#tlPrev'); pg.wait_for_timeout(1200)

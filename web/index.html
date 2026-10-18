@@ -136,7 +136,7 @@ kbd{font:10px ui-monospace,Menlo,monospace;color:var(--muted)}
 .tree li{display:flex;align-items:center;gap:4px;height:22px;padding:0 4px;border-radius:3px;white-space:nowrap;cursor:default}
 .tree li:hover{background:var(--panel2)}
 .tree li.sel{background:rgba(6,150,215,.22)}
-.tree li.dim{opacity:.5}
+.tree li.faded{opacity:.5}
 .tree li .tw{width:12px;text-align:center;font-size:9px;color:var(--muted);cursor:pointer}
 .tree li .eye{display:flex;color:var(--muted);cursor:pointer}
 .tree li .eye svg.i{width:14px;height:14px}
@@ -214,7 +214,7 @@ kbd{font:10px ui-monospace,Menlo,monospace;color:var(--muted)}
 .feat:focus{border-color:var(--accent)}
 .feat.err{color:var(--err)}
 .feat.warn{color:var(--warn)}
-.feat.dim{opacity:.35}
+.feat.faded{opacity:.35}
 .feat.rolled{opacity:.3;filter:grayscale(1)}
 .feat.up{border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 18%,transparent)}
 .feat.down{border-color:#f59e0b;background:color-mix(in srgb,#f59e0b 18%,transparent)}
@@ -1197,11 +1197,13 @@ function hoverMesh(m) {
   if (m && m !== tintedMesh && m.material.emissive) m.material.emissive.set(0x1a2b47);
 }
 function clearHover() { hoverMesh(null); const p = hoveredEdge; hoveredEdge = null; if (p) styleEdge(p); }
+const hiddenSketches = new Set();
 function showSketchLoops(sketches) {
   sketchGroup.clear();
   const okMat = new THREE.LineBasicMaterial({ color: cssVar('--accent2') || '#60a5fa' });
   const badMat = new THREE.LineBasicMaterial({ color: cssVar('--err') || '#f87171' });
   for (const s of sketches || []) {
+    if (hiddenSketches.has(s.id)) continue;
     for (const loop of s.loops || []) sketchGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(loop.map(p => new THREE.Vector3(...p))), okMat));
     for (const ch of s.open || []) sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ch.map(p => new THREE.Vector3(...p))), badMat));
   }
@@ -1522,19 +1524,21 @@ function renderTree() {
   bh.querySelector('.eye').onclick = () => { const all = bodies.every(b => hiddenBodies.has(b.id)); bodies.forEach(b => all ? hiddenBodies.delete(b.id) : hiddenBodies.add(b.id)); applyHidden(); renderTree(); };
   if (treeOpen.bodies) for (const b of bodies) {
     const hid = hiddenBodies.has(b.id);
-    const li = row(2, `<span class="tw"></span>${eye(!hid, t('br.hide'))}<span class="ti">${icon('i-body')}</span><span class="nm mono">${b.id}</span><span class="act" title="${t('br.props')}">${icon('i-props')}</span>`, (hid ? 'dim' : '') + (selectedBody === b.id ? ' sel' : ''));
+    const li = row(2, `<span class="tw"></span>${eye(!hid, t('br.hide'))}<span class="ti">${icon('i-body')}</span><span class="nm mono">${b.id}</span><span class="act" title="${t('br.props')}">${icon('i-props')}</span>`, (hid ? 'faded' : '') + (selectedBody === b.id ? ' sel' : ''));
     li.querySelector('.eye').onclick = e => { e.stopPropagation(); hid ? hiddenBodies.delete(b.id) : hiddenBodies.add(b.id); applyHidden(); renderTree(); };
     li.querySelector('.act').onclick = e => { e.stopPropagation(); showProps(true); };
     li.onclick = () => { selectedBody = selectedBody === b.id ? null : b.id; const prev = selectedEdge; selectedEdge = null; if (prev) styleEdge(prev); renderSelection(); renderTree(); };
   }
+  // The eye on a sketch only hides its display (as in Fusion); suppressing a feature stays in the context menu.
   const sketches = doc.timeline.map((f, i) => [f, i]).filter(([f]) => f.type === 'Sketch');
-  const sh = row(1, `${tw(treeOpen.sketches)}${eye(sketchGroup.visible, '')}<span class="ti">${icon('i-sketch')}</span><span class="nm">${t('br.sketches')}</span><span class="cnt">${sketches.length}</span>`);
+  const allSkHidden = sketches.length > 0 && sketches.every(([f]) => hiddenSketches.has(f.id));
+  const sh = row(1, `${tw(treeOpen.sketches)}${eye(!allSkHidden, t('br.hide'))}<span class="ti">${icon('i-sketch')}</span><span class="nm">${t('br.sketches')}</span><span class="cnt">${sketches.length}</span>`);
   sh.querySelector('.tw').onclick = () => { treeOpen.sketches = !treeOpen.sketches; renderTree(); };
-  sh.querySelector('.eye').onclick = () => { sketchGroup.visible = !sketchGroup.visible; renderTree(); };
+  sh.querySelector('.eye').onclick = () => { sketches.forEach(([f]) => allSkHidden ? hiddenSketches.delete(f.id) : hiddenSketches.add(f.id)); showSketchLoops(lastStatus.sketches); renderTree(); };
   if (treeOpen.sketches) for (const [f, i] of sketches) {
-    const sup = doc.suppressed.includes(f.id);
-    const li = row(2, `<span class="tw"></span>${eye(!sup, t('ctx.suppress'))}<span class="ti">${icon('i-sketch')}</span><span class="nm mono">${f.id}</span><span class="act" title="${t('br.edit')}">${icon('i-line')}</span>`, sup ? 'dim' : '');
-    li.querySelector('.eye').onclick = e => { e.stopPropagation(); toggleSuppress(i); };
+    const sup = doc.suppressed.includes(f.id), hid = hiddenSketches.has(f.id);
+    const li = row(2, `<span class="tw"></span>${eye(!hid, t('br.hide'))}<span class="ti">${icon('i-sketch')}</span><span class="nm mono">${f.id}${sup ? ` <span class="cnt">(${t('suppressed')})</span>` : ''}</span><span class="act" title="${t('br.edit')}">${icon('i-line')}</span>`, (sup || hid) ? 'faded' : '');
+    li.querySelector('.eye').onclick = e => { e.stopPropagation(); hid ? hiddenSketches.delete(f.id) : hiddenSketches.add(f.id); showSketchLoops(lastStatus.sketches); renderTree(); };
     li.querySelector('.act').onclick = e => { e.stopPropagation(); editFeature(i); };
     li.ondblclick = () => editFeature(i);
     li.oncontextmenu = ev => { ev.preventDefault(); openContext(ev, i); };
@@ -1587,7 +1591,7 @@ function renderTimeline() {
     const s = byId[f.id];
     const sup = doc.suppressed.includes(f.id);
     const warn = s && s.ok && s.warning;
-    const d = document.createElement('div'); d.className = 'feat' + (s && !s.ok ? ' err' : '') + (warn ? ' warn' : '') + (sup ? ' dim' : '') + (i >= at ? ' rolled' : ''); d.tabIndex = 0;
+    const d = document.createElement('div'); d.className = 'feat' + (s && !s.ok ? ' err' : '') + (warn ? ' warn' : '') + (sup ? ' faded' : '') + (i >= at ? ' rolled' : ''); d.tabIndex = 0;
     d.title = `${t('tool.' + f.type)}  ${f.id}${s ? `  ·  ${s.millis} ms` : ''}` + (s && !s.ok ? `\n${s.message}` : warn ? `\n${t('warn.badge')}: ${s.warning}` : (sup ? `\n${t('suppressed')}` : ''));
     d.dataset.id = f.id;
     if (s && s.inputs && s.inputs.length) d.title += `\n${t('tl.inputs')}: ${s.inputs.join(', ')}`;
@@ -2920,6 +2924,7 @@ window.cadrust = {
   roll: (n) => { if (n !== undefined) setRoll(n); return { roll, index: rollIndex(), sent: rollDoc().timeline.length }; },
   tab: () => [...document.querySelectorAll('.rtab.active')].map(b => b.dataset.tab),
   hidden: () => [...hiddenBodies],
+  hiddenSketches: () => [...hiddenSketches],
   camera: () => { const d = camera.position.clone().sub(controls.target).normalize(); return [d.x, d.y, d.z]; },
   navMode: () => ({ [THREE.MOUSE.ROTATE]: 'orbit', [THREE.MOUSE.PAN]: 'pan', [THREE.MOUSE.DOLLY]: 'zoom' })[controls.mouseButtons.LEFT],
   projection: (m) => { if (m) setProjection(m); return camera.isOrthographicCamera ? 'ortho' : 'persp'; },
