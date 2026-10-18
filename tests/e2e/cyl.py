@@ -250,8 +250,14 @@ with sync_playwright() as p:
     check('history marker rolls back two features', pg.evaluate('cadrust.roll().index') == nf - 2)
     pg.click('#tlLast'); W(1500)
     check('marker back to the end', abs(vol() - v5) < 1e-6)
-    pg.click('#btnSave'); W(800)
-    check('saved on the server', 'Saved' in pg.inner_text('#msg') or 'saved' in pg.inner_text('#msg').lower(), pg.inner_text('#msg'))
+    # a design without a home opens Save As on Ctrl+S; pick the project folder and keep the name
+    pg.click('#btnSave'); W(600)
+    check('save on a new design opens Save As', pg.is_visible('#dialog') and pg.is_visible('#svName'))
+    if pg.is_visible('#svLoc') and pg.evaluate("[...document.querySelectorAll('#svLoc option')].some(o => o.value === 'server')"):
+        pg.select_option('#svLoc', 'server'); pg.wait_for_timeout(300); pg.fill('#svName', 'cylinder'); pg.click('#dOk'); W(800)
+        check('saved into the project folder', 'cylinder.cadrust.json' in pg.inner_text('#msg') and os.path.isfile(EX + 'cylinder.cadrust.json'), pg.inner_text('#msg'))
+    else:
+        pg.click('#dCancel')
 
     check('no console errors', not errors, '\n'.join(errors[:5]))
     b.close()
