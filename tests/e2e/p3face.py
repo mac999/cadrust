@@ -17,7 +17,7 @@ with sync_playwright() as p:
     # face picking is armed as soon as the dialog opens; one click on the face starts the sketch
     x, y = pg.evaluate('cadrust.project([15, 10, 6])')   # top face of the bracket base (z = thickness)
     pg.mouse.move(x, y); pg.wait_for_timeout(100); pg.mouse.click(x, y); pg.wait_for_timeout(200)
-    print('face note:', pg.text_content('#skFaceNote'), '| plane select disabled:', pg.evaluate('document.querySelector("#skPlane").disabled'))
+    print('sketch started on the face:', pg.evaluate('cadrust.sketch().active'), pg.evaluate('JSON.stringify(cadrust.sketch().feat.plane)'))
     if pg.is_visible('#dialog #dOk'): pg.click('#dOk')
     pg.wait_for_timeout(1500)
     sk = pg.evaluate('cadrust.sketch()'); print('plane:', sk['feat']['plane'])
